@@ -40,6 +40,14 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    /** Nom complet de l'utilisateur (optionnel pour rétro-compatibilité). */
+    @Column(name = "name")
+    private String name;
+
+    /** Rôle de l'utilisateur : formateur ou apprenant (optionnel pour rétro-compatibilité). */
+    @Column(name = "role")
+    private String role;
+
     /** Token SSO émis après authentification HMAC réussie. */
     @Column(name = "session_token")
     private String sessionToken;
@@ -57,6 +65,14 @@ public class User {
     public User(String email, String password) {
         this.email = email;
         this.password = password;
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public User(String email, String password, String name, String role) {
+        this.email = email;
+        this.password = password;
+        this.name = name;
+        this.role = role;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -80,4 +96,10 @@ public class User {
 
     public LocalDateTime getLockUntil() { return lockUntil; }
     public void setLockUntil(LocalDateTime lockUntil) { this.lockUntil = lockUntil; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
 }

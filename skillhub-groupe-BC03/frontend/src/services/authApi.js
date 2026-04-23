@@ -43,3 +43,8 @@ export async function profilConnecte() {
 export async function deconnecter() {
   await apiAuth.post("/logout");
 }
+
+export async function echangerTokenSso(tp5Token) {
+  const reponse = await apiAuth.post("/sso/tp5", { tp5_token: tp5Token });
+  return reponse.data;
+}

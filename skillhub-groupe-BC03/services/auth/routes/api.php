@@ -3,8 +3,9 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Middleware\AntiRejeuHmac;
 
-// 1. Endpoint interne (Pas de middleware, appelé en interne par les autres microservices)
+// 1. Endpoints internes (sans middleware, appelés en interne)
 Route::post('/validate-token', [AuthController::class, 'validateToken']);
+Route::post('/sso/tp5', [AuthController::class, 'ssoTp5']);
 
 // 2. Routes publiques SÉCURISÉES (Protection Anti-Rejeu activée)
 Route::middleware([AntiRejeuHmac::class])->group(function () {

@@ -45,10 +45,19 @@ public class AuthController {
      * @return 201 Created si succès
      */
     @PostMapping("/api/auth/register")
-    public ResponseEntity<Map<String, String>> register(@RequestBody RegisterRequest request) {
-        authService.register(request.getEmail(), request.getPassword());
+    public ResponseEntity<Map<String, Object>> register(@RequestBody RegisterRequest request) {
+        User user = authService.register(
+                request.getEmail(),
+                request.getPassword(),
+                request.getName(),
+                request.getRole());
+        String expiresAt = LocalDateTime.now().plusMinutes(15).toString();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of("message", "Utilisateur créé avec succès"));
+                .body(Map.of(
+                        "message", "Utilisateur créé avec succès",
+                        "accessToken", user.getSessionToken(),
+                        "expiresAt", expiresAt
+                ));
     }
 
     /**
@@ -108,11 +117,13 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         String token = extractToken(authorization);
         User user = authService.getUserByToken(token);
-        return ResponseEntity.ok(Map.of(
-                "id", user.getId(),
-                "email", user.getEmail(),
-                "createdAt", user.getCreatedAt().toString()
-        ));
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("id", user.getId());
+        body.put("email", user.getEmail());
+        body.put("name", user.getName() != null ? user.getName() : "");
+        body.put("role", user.getRole() != null ? user.getRole() : "");
+        body.put("createdAt", user.getCreatedAt().toString());
+        return ResponseEntity.ok(body);
     }
 
     private String extractToken(String authorization) {

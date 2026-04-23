@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Service — Inscription</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            padding: 16px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 48px 40px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+
+        .logo h1 {
+            color: #fff;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .logo p {
+            color: rgba(255,255,255,0.45);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .service-badge {
+            display: inline-block;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            color: #a5b4fc;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+
+        .redirect-notice {
+            display: none;
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            color: #a5b4fc;
+        }
+
+        .redirect-notice.visible { display: flex; align-items: center; gap: 8px; }
+
+        label {
+            display: block;
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .field { margin-bottom: 20px; }
+
+        input[type="text"], input[type="email"], input[type="password"], select {
+            width: 100%;
+            padding: 13px 16px;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 15px;
+            transition: border-color 0.2s, background 0.2s;
+            outline: none;
+            appearance: none;
+        }
+
+        input[type="text"]:focus, input[type="email"]:focus,
+        input[type="password"]:focus, select:focus {
+            border-color: #667eea;
+            background: rgba(255,255,255,0.1);
+        }
+
+        input::placeholder { color: rgba(255,255,255,0.25); }
+
+        select option { background: #302b63; color: #fff; }
+
+        button[type="submit"] {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            margin-top: 8px;
+        }
+
+        button[type="submit"]:hover { opacity: 0.9; }
+        button[type="submit"]:active { transform: scale(0.98); }
+        button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .alert {
+            display: none;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        .alert.success {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            color: #86efac;
+        }
+
+        .alert.visible { display: block; }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .login-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        .login-link a {
+            color: #a5b4fc;
+            text-decoration: none;
+        }
+
+        .login-link a:hover { text-decoration: underline; }
+
+        .security-note {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255,255,255,0.3);
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <div class="logo">
+            <div class="logo-icon">✨</div>
+            <h1>Créer un compte</h1>
+            <p>Service d'authentification sécurisé</p>
+            <span class="service-badge">Microservice · TP-5</span>
+        </div>
+
+        <div class="redirect-notice" id="redirectNotice">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z"/>
+            </svg>
+            <span id="redirectNoticeText">Inscription demandée par une application</span>
+        </div>
+
+        <div class="alert" id="alert"></div>
+
+        <form id="registerForm" onsubmit="handleRegister(event)">
+            <div class="field">
+                <label for="name">Nom complet</label>
+                <input type="text" id="name" placeholder="Jean Dupont" required autocomplete="name">
+            </div>
+            <div class="field">
+                <label for="email">Adresse email</label>
+                <input type="email" id="email" placeholder="vous@exemple.com" required autocomplete="email">
+            </div>
+            <div class="field">
+                <label for="role">Rôle</label>
+                <select id="role" required>
+                    <option value="" disabled selected>Choisir un rôle</option>
+                    <option value="formateur">Formateur</option>
+                    <option value="apprenant">Apprenant</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="password">Mot de passe</label>
+                <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+            <div class="field">
+                <label for="passwordConfirm">Confirmer le mot de passe</label>
+                <input type="password" id="passwordConfirm" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+            <button type="submit" id="submitBtn">Créer mon compte</button>
+        </form>
+
+        <p class="login-link">
+            Déjà inscrit ? <a id="loginLink" href="/login">Se connecter</a>
+        </p>
+
+        <div class="security-note">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            Mot de passe chiffré AES-256-GCM — stockage sécurisé
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    const REDIRECT_URI = /*[[${redirectUri}]]*/ '';
+
+    // Mettre à jour le lien de connexion pour préserver le redirect_uri
+    if (REDIRECT_URI) {
+        const notice = document.getElementById('redirectNotice');
+        notice.classList.add('visible');
+        try {
+            const host = new URL(REDIRECT_URI).hostname;
+            document.getElementById('redirectNoticeText').textContent =
+                `Inscription demandée par : ${host}`;
+        } catch(e) {}
+
+        document.getElementById('loginLink').href =
+            '/login?redirect_uri=' + encodeURIComponent(REDIRECT_URI);
+    }
+
+    function showAlert(message, type) {
+        const alert = document.getElementById('alert');
+        alert.textContent = message;
+        alert.className = `alert ${type} visible`;
+    }
+
+    const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+    async function handleRegister(event) {
+        event.preventDefault();
+        const name = document.getElementById('name').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const role = document.getElementById('role').value;
+        const password = document.getElementById('password').value;
+        const passwordConfirm = document.getElementById('passwordConfirm').value;
+        const btn = document.getElementById('submitBtn');
+
+        document.getElementById('alert').className = 'alert';
+
+        if (name.length < 3) {
+            showAlert('Le nom doit contenir au moins 3 caractères.', 'error');
+            return;
+        }
+
+        if (!PASSWORD_REGEX.test(password)) {
+            showAlert('Le mot de passe doit contenir 8 caractères minimum, une majuscule, un chiffre et un caractère spécial.', 'error');
+            return;
+        }
+
+        if (password !== passwordConfirm) {
+            showAlert('Les mots de passe ne correspondent pas.', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Inscription en cours…';
+
+        try {
+            const response = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password, role })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                const msg = data.message || data.error || 'Inscription échouée';
+                showAlert(msg, 'error');
+                return;
+            }
+
+            const token = data.accessToken;
+
+            if (REDIRECT_URI) {
+                showAlert('Compte créé ! Redirection…', 'success');
+                const separator = REDIRECT_URI.includes('?') ? '&' : '?';
+                setTimeout(() => {
+                    window.location.href = `${REDIRECT_URI}${separator}token=${encodeURIComponent(token)}`;
+                }, 500);
+            } else {
+                localStorage.setItem('auth_token', token);
+                showAlert('Compte créé avec succès ! Token stocké en localStorage.', 'success');
+            }
+        } catch (err) {
+            showAlert('Erreur réseau. Vérifiez que le service est démarré.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Créer mon compte';
+        }
+    }
+</script>
+</body>
+</html>

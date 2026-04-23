@@ -75,6 +75,10 @@ public class AuthService {
      * @throws ResourceConflictException si l'email existe déjà
      */
     public User register(String email, String password) {
+        return register(email, password, null, null);
+    }
+
+    public User register(String email, String password, String name, String role) {
         if (email == null || email.isBlank()) {
             throw new InvalidInputException("L'email ne peut pas être vide");
         }
@@ -91,7 +95,12 @@ public class AuthService {
 
         // TP4 : chiffrement AES-256-GCM avant stockage (format v1:iv:ciphertext)
         String encryptedPassword = aesGcmService.encrypt(password);
-        User user = new User(email, encryptedPassword);
+        User user = new User(email, encryptedPassword, name, role);
+
+        // Émettre un token SSO immédiatement après inscription
+        String token = UUID.randomUUID().toString();
+        user.setSessionToken(token);
+
         userRepository.save(user);
         logger.info("Inscription réussie pour : {}", email);
         return user;

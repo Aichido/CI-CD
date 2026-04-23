@@ -11,6 +11,7 @@ import Accueil from "./pages/Accueil";
 import Formations from "./pages/Formations";
 import Connexion from "./pages/Connexion";
 import Inscription from "./pages/Inscription";
+import AuthCallback from "./pages/AuthCallback";
 import RouteProtegee from "./components/RouteProtegee";
 import { verifierSession } from "./services/session";
 
@@ -108,6 +109,7 @@ export default function App() {
         <Route path="/" element={<Accueil />} />
         <Route path="/formations" element={<Formations />} />
         <Route path="/formation/:id" element={<DetailFormation />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
 
         <Route element={<RouteInvite />}>
           <Route path="/connexion" element={<Connexion />} />

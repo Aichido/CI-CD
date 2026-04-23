@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class AuthController extends Controller
@@ -193,6 +194,78 @@ class AuthController extends Controller
         } catch (Throwable) {
             return response()->json(['valid' => false, 'message' => 'Jeton invalide ou expiré.'], 401);
         }
+    }
+
+    /**
+     * Échange un token TP-5 contre un JWT Skillhub (SSO).
+     * Valide le token via l'endpoint /api/me de TP-5, puis crée ou récupère
+     * l'utilisateur dans la base Skillhub, et émet un JWT local.
+     */
+    public function ssoTp5(Request $requete): JsonResponse
+    {
+        $donneesValidees = $requete->validate([
+            'tp5_token' => ['required', 'string'],
+        ]);
+
+        $tp5Url = env('TP5_AUTH_URL', 'http://localhost:8080');
+
+        try {
+            $reponse = Http::withToken($donneesValidees['tp5_token'])
+                ->timeout(5)
+                ->get("{$tp5Url}/api/me");
+        } catch (Throwable) {
+            return response()->json(['message' => 'Service d\'authentification TP-5 inaccessible.'], 503);
+        }
+
+        if (!$reponse->successful()) {
+            return response()->json(['message' => 'Token TP-5 invalide ou expiré.'], 401);
+        }
+
+        $profil = $reponse->json();
+        $email  = $profil['email'] ?? null;
+
+        if (!$email) {
+            return response()->json(['message' => 'Profil TP-5 invalide.'], 422);
+        }
+
+        $nomParDefaut = $profil['name'] ?? explode('@', $email)[0];
+        $roleParDefaut = $profil['role'] ?? 'apprenant';
+        // On valide que le rôle est accepté par Skillhub
+        if (!in_array($roleParDefaut, ['formateur', 'apprenant'], true)) {
+            $roleParDefaut = 'apprenant';
+        }
+
+        // Créer ou récupérer l'utilisateur dans la base Skillhub
+        $utilisateur = User::query()->firstOrCreate(
+            ['email' => $email],
+            [
+                'name'     => $nomParDefaut,
+                'password' => $this->chiffrerAesGcm(bin2hex(random_bytes(16))),
+                'role'     => $roleParDefaut,
+            ]
+        );
+
+        $expiration = CarbonImmutable::now()->addHours(8)->timestamp;
+
+        $jeton = $this->serviceJwt->generer([
+            'sub'   => $utilisateur->id,
+            'email' => $utilisateur->email,
+            'role'  => $utilisateur->role,
+            'iat'   => CarbonImmutable::now()->timestamp,
+            'exp'   => $expiration,
+        ]);
+
+        return response()->json([
+            'token'       => $jeton,
+            'token_type'  => 'Bearer',
+            'expires_at'  => $expiration,
+            'utilisateur' => [
+                'id'    => $utilisateur->id,
+                'nom'   => $utilisateur->name,
+                'email' => $utilisateur->email,
+                'role'  => $utilisateur->role,
+            ],
+        ]);
     }
 
     private function cleBlacklist(string $jeton): string
