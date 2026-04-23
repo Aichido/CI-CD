@@ -195,6 +195,104 @@ Le frontend reste à lancer manuellement avec `npm run dev`.
 
 ---
 
+## Démarrage complet avec Docker (TP-5 + SkillHub ensemble)
+
+Le `docker-compose.yml` de SkillHub inclut **TP-5 comme service** (`tp5_auth`). Un seul `docker compose up` démarre tout : TP-5, les trois microservices Laravel, MySQL, et le frontend React.
+
+### Prérequis
+
+- Docker Desktop installé et démarré
+- Les deux dépôts dans le même dossier parent :
+  ```
+  CI-CD/
+  ├── TP-5/                    ← dépôt Spring Boot
+  └── skillhub-groupe-BC03/    ← dépôt SkillHub (contient docker-compose.yml)
+  ```
+
+### Étape 1 — Créer le fichier `.env` pour la Master Key
+
+Dans `skillhub-groupe-BC03/`, créer un fichier `.env` :
+
+```bash
+cd skillhub-groupe-BC03
+echo 'APP_MASTER_KEY=aBcDeFgHiJkLmNoPqRsTuVwXyZ012345' > .env
+```
+
+> La clé doit faire exactement 32 caractères. Générer une clé aléatoire :
+> ```bash
+> openssl rand -base64 32 | head -c 32
+> ```
+
+### Étape 2 — Démarrer tous les services
+
+```bash
+cd skillhub-groupe-BC03
+docker compose up -d
+```
+
+Docker va :
+1. Construire l'image TP-5 (depuis `../TP-5/Dockerfile`)
+2. Construire les images des microservices Laravel
+3. Démarrer MySQL et créer les bases `auth_db`, `skillhub_auth`, `skillhub_catalog`, `skillhub_enrollment`
+4. Démarrer `tp5_auth` (port 8080), puis `auth_api`, `catalog_api`, `inscription_api`
+5. Démarrer le frontend React (port 5173)
+
+### Étape 3 — Vérifier que tout est démarré
+
+```bash
+docker compose ps
+```
+
+Tous les services doivent afficher `Up` :
+
+```
+NAME                   STATUS
+tp5_auth               Up   0.0.0.0:8080->8080/tcp
+skillhub_auth          Up   0.0.0.0:8001->8000/tcp
+skillhub_catalog       Up   0.0.0.0:8002->8000/tcp
+skillhub_inscription   Up   0.0.0.0:8003->8000/tcp
+skillhub_frontend      Up   0.0.0.0:5173->5173/tcp
+skillhub_db            Up   0.0.0.0:3306->3306/tcp
+```
+
+### Étape 4 — Migrer les bases Laravel
+
+Au premier lancement, exécuter les migrations dans chaque service :
+
+```bash
+docker compose exec auth_api php artisan migrate --force
+docker compose exec catalog_api php artisan migrate --force
+docker compose exec inscription_api php artisan migrate --force
+```
+
+### Étape 5 — Ouvrir l'application
+
+Ouvrir **http://localhost:5173** dans le navigateur. La connexion et l'inscription passent automatiquement par TP-5 (port 8080) grâce au SSO.
+
+> Dans Docker, `auth_api` communique avec `tp5_auth` via le réseau interne Docker (`http://tp5_auth:8080`), pas via `localhost`. Cette configuration est déjà en place dans `docker-compose.yml`.
+
+### Commandes utiles
+
+```bash
+# Voir les logs de tous les services
+docker compose logs -f
+
+# Voir les logs d'un service précis
+docker compose logs -f tp5_auth
+docker compose logs -f auth_api
+
+# Redémarrer un service
+docker compose restart tp5_auth
+
+# Arrêter tout
+docker compose down
+
+# Arrêter et supprimer les données MySQL (repart de zéro)
+docker compose down -v
+```
+
+---
+
 ## Étape 3 — Tester l'intégration
 
 ### Flux de connexion
