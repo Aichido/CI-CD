@@ -1,5 +1,25 @@
 services:
   # ---------------------------------
+  # TP-5 : AUTH SERVICE SSO (Spring Boot)
+  # ---------------------------------
+  tp5_auth:
+    build:
+      context: ../TP-5
+      dockerfile: Dockerfile
+    container_name: tp5_auth
+    ports:
+      - "8080:8080"
+    environment:
+      APP_MASTER_KEY: ${APP_MASTER_KEY}
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/auth_db?useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: skillhub_user
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      - db
+    networks:
+      - skillhub_network
+
+  # ---------------------------------
   # FRONTEND (React / Vue / Node.js)
   # ---------------------------------
   frontend:
@@ -28,8 +48,12 @@ services:
     ports:
       - "8001:8000"
     command: php artisan serve --host=0.0.0.0 --port=8000
+    environment:
+      TP5_AUTH_URL: http://tp5_auth:8080
+      APP_MASTER_KEY: ${APP_MASTER_KEY}
     depends_on:
       - db
+      - tp5_auth
     networks:
       - skillhub_network
 

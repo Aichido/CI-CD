@@ -447,3 +447,332 @@ Exemple valide : `MonMotDePasse1!`
 | `http://localhost:5173/auth/callback` | Page de retour SSO SkillHub |
 | `http://localhost:5173/connexion` | Déclenche redirect vers TP-5 login |
 | `http://localhost:5173/inscription` | Déclenche redirect vers TP-5 register |
+
+---
+
+## Documentation pédagogique — Progression TP1 → TP5
+
+Cette section retrace la progression pédagogique du module **Auth Server** (D. Samfat, Bachelor Informatique — Bloc 03). Chaque TP introduit un niveau de sécurité supplémentaire, en partant d'une authentification naïve pour aboutir à un service SSO conteneurisé avec CI/CD.
+
+---
+
+### Vue d'ensemble de la progression
+
+```
+TP1  →  TP2  →  TP3  →  TP4  →  TP5
+ │        │        │        │        │
+Mot de   BCrypt  HMAC /   Master   Docker +
+passe    + Anti  Nonce /  Key AES  Pipeline
+en clair bruteF  SSO      256-GCM  complet
+```
+
+| TP | Concept clé | Risque éliminé |
+|----|-------------|----------------|
+| TP1 | Mot de passe en clair, pas de protection | Tout : interception, vol de BDD, attaque par dictionnaire |
+| TP2 | BCrypt + anti brute-force + SonarCloud | Attaque par dictionnaire, credential stuffing |
+| TP3 | HMAC-SHA256, nonce, timestamp, protocole SSO | Rejeu, interception du mot de passe en transit |
+| TP4 | Chiffrement AES-256-GCM avec Master Key | Dump de BDD lisible, compromission sans clé |
+| TP5 | Docker, changement de mot de passe, CI/CD étendu | Déploiement non reproductible, pipeline incomplet |
+
+---
+
+### TP1 — Authentification basique (dangereuse)
+
+**Objectif pédagogique :** Comprendre pourquoi stocker les mots de passe en clair est une faute critique.
+
+**Ce qui est implémenté :**
+- Formulaire de login/inscription HTML basique
+- Stockage du mot de passe en clair dans MySQL
+- Vérification par égalité directe de chaînes
+
+**Risques mis en évidence :**
+- Une fuite de la base de données expose tous les mots de passe immédiatement
+- Les mots de passe réutilisés sur d'autres sites sont compromis
+- Aucune résistance aux attaques par dictionnaire ou rainbow tables
+
+**Savoir-faire acquis :** Créer une application Spring Boot basique, exposer des endpoints REST, connecter une base MySQL avec JPA/Hibernate.
+
+**Tag Git imposé :** `tp1`
+
+---
+
+### TP2 — Authentification renforcée (BCrypt + anti brute-force)
+
+**Objectif pédagogique :** Comprendre le hachage à sens unique et la protection contre les attaques automatisées.
+
+**Ce qui est implémenté :**
+- Hachage BCrypt (`BCryptPasswordEncoder`) avec facteur de coût 12
+- Compteur de tentatives échouées par adresse IP
+- Blocage temporaire après N tentatives (fenêtre glissante)
+- Intégration SonarCloud : le pipeline GitHub Actions bloque le merge si le Quality Gate est rouge
+
+**Risques éliminés :**
+- Un dump de BDD ne donne plus accès aux mots de passe (hachage irréversible)
+- Le brute-force par dictionnaire est ralenti par le coût BCrypt et bloqué par le rate limiting
+
+**Savoir-faire acquis :** Utiliser un `PasswordEncoder`, implémenter un middleware de comptage de tentatives, configurer SonarCloud dans GitHub Actions.
+
+**Tag Git imposé :** `tp2`
+
+---
+
+### TP3 — Authentification forte (HMAC + SSO)
+
+**Objectif pédagogique :** Comprendre que le mot de passe ne doit jamais transiter en clair sur le réseau, même via HTTPS.
+
+**Ce qui est implémenté :**
+
+#### Protocole HMAC-SHA256
+
+À la connexion, le client ne transmet **jamais** le mot de passe. Il transmet une **preuve** :
+
+```
+nonce      = UUID aléatoire (usage unique)
+timestamp  = epoch Unix en secondes
+signature  = HMAC-SHA256(clé = mot_de_passe, message = email + nonce + timestamp)
+```
+
+Le serveur :
+1. Vérifie que le `timestamp` date de moins de 5 minutes (fenêtre temporelle)
+2. Vérifie que le `nonce` n'a pas déjà été utilisé (table `used_nonces`, TTL 10 min)
+3. Reconstruit la signature HMAC avec le mot de passe stocké
+4. Compare les deux signatures (HMAC-safe equality)
+
+Si les signatures correspondent : authentification réussie.
+
+#### Middleware anti-rejeu (`AntiRejeuHmac`)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  En-têtes HTTP requis :                              │
+│    X-Nonce      : UUID v4 (jamais réutilisé)         │
+│    X-Timestamp  : epoch Unix (max 5 min d'écart)     │
+│    X-Hmac-Sig   : HMAC-SHA256 de la requête          │
+└──────────────────────────────────────────────────────┘
+```
+
+Ce middleware est appliqué sur toutes les routes inter-services (sauf `/api/auth/login`, `/api/auth/register`, et `/api/sso/tp5` qui ont leur propre mécanisme).
+
+#### Protocole SSO (Single Sign-On)
+
+TP3 introduit le principe du portail d'authentification centralisé :
+- Une seule autorité délivre des tokens
+- Les autres applications délèguent l'authentification à ce portail
+- `redirect_uri` paramètre contrôle où renvoyer l'utilisateur après succès
+- Le token UUID est échangé côté serveur (pas côté client) pour éviter l'interception
+
+**Savoir-faire acquis :** Implémenter HMAC-SHA256, gérer un nonce en base, écrire un middleware Spring, comprendre le flux OAuth-like.
+
+**Tag Git imposé :** `tp3`
+
+---
+
+### TP4 — Chiffrement symétrique (AES-256-GCM + Master Key)
+
+**Objectif pédagogique :** Comprendre pourquoi, dans ce contexte SSO, le mot de passe doit être récupérable (chiffrement réversible) contrairement au cas standard (hachage irréversible).
+
+**Contexte pédagogique important :**
+
+> Dans une application classique, BCrypt est le bon choix car on ne compare jamais le mot de passe en clair — on compare les hachages. Mais dans ce protocole HMAC, le serveur doit **recalculer** la signature HMAC à partir du mot de passe original pour la comparer à celle du client. Il faut donc pouvoir récupérer le mot de passe original. BCrypt est irréversible, AES-GCM est réversible.
+>
+> **Ce chiffrement réversible est une décision pédagogique intentionnelle**, acceptée dans ce contexte car la sécurité repose sur la confidentialité de la Master Key (non stockée en base, injectée uniquement via variable d'environnement).
+
+**Ce qui est implémenté :**
+
+#### `AesGcmService`
+
+```java
+// Chiffrement
+byte[] iv = new byte[12];                    // 96 bits IV aléatoire
+new SecureRandom().nextBytes(iv);
+Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(128, iv));
+byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+// Résultat stocké : Base64(iv + ciphertext)
+```
+
+```java
+// Déchiffrement
+byte[] decoded = Base64.getDecoder().decode(stored);
+byte[] iv = Arrays.copyOfRange(decoded, 0, 12);
+byte[] ciphertext = Arrays.copyOfRange(decoded, 12, decoded.length);
+// ... déchiffrement avec même IV et clé
+```
+
+#### Injection de la Master Key
+
+La clé AES-256 (32 octets) est injectée **uniquement via variable d'environnement** :
+
+```bash
+# Lancement sans Docker
+export APP_MASTER_KEY="aBcDeFgHiJkLmNoPqRsTuVwXyZ012345"
+./mvnw spring-boot:run
+
+# Lancement avec Docker
+docker run -e APP_MASTER_KEY="aBcDeFgHiJkLmNoPqRsTuVwXyZ012345" tp5_auth
+```
+
+Elle n'apparaît **jamais** dans le code source ni dans la base de données.
+
+#### Pipeline GitHub Actions (obligatoire dès TP4)
+
+```yaml
+jobs:
+  tests-unitaires:
+    steps:
+      - run: mvn test          # JUnit obligatoire
+
+  sonar-scan:
+    needs: tests-unitaires
+    steps:
+      - run: mvn sonar:sonar   # Quality Gate SonarCloud
+
+  docker-build:
+    needs: sonar-scan
+    steps:
+      - run: docker build .    # Vérification Dockerfile
+```
+
+Le merge est bloqué si les tests échouent ou si le Quality Gate est rouge.
+
+**Savoir-faire acquis :** Chiffrement symétrique AES-GCM, gestion de secrets via variables d'environnement, pipeline CI/CD GitHub Actions.
+
+**Tag Git imposé :** `tp4`
+
+---
+
+### TP5 — Docker + Changement de mot de passe + Pipeline complet
+
+**Objectif pédagogique :** Rendre le service déployable de façon reproductible et sécuriser le cycle de vie des mots de passe.
+
+**Ce qui est implémenté :**
+
+#### Dockerfile multi-stage
+
+```dockerfile
+# Étape 1 : Builder (image lourde, Maven + JDK)
+FROM maven:3.9-eclipse-temurin-17 AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -q     # cache des dépendances
+COPY src ./src
+RUN mvn clean package -DskipTests -q  # compilation
+
+# Étape 2 : Runtime (image légère, JRE Alpine uniquement)
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/target/auth-0.0.1-SNAPSHOT.jar app.jar
+EXPOSE 8080
+ENV APP_MASTER_KEY=""
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+**Avantages du multi-stage :**
+- L'image finale ne contient pas Maven ni le JDK complet (~200 Mo au lieu de ~600 Mo)
+- Les sources ne sont pas incluses dans l'image de production
+- Les dépendances Maven sont mises en cache dans une couche Docker dédiée
+
+#### Commandes Docker
+
+```bash
+# Construire l'image
+docker build -t tp5_auth .
+
+# Lancer le conteneur
+docker run -p 8080:8080 \
+  -e APP_MASTER_KEY="votre-cle-32-caracteres" \
+  -e SPRING_DATASOURCE_URL="jdbc:mysql://host.docker.internal:3306/auth_db" \
+  tp5_auth
+
+# Avec Docker Compose (depuis skillhub-groupe-BC03/)
+docker compose up -d
+```
+
+#### Changement de mot de passe sécurisé
+
+Le service expose `/api/auth/change-password` qui :
+1. Vérifie l'ancien mot de passe via HMAC (même protocole que le login)
+2. Valide le nouveau mot de passe selon la politique en vigueur
+3. Re-chiffre le nouveau mot de passe avec AES-GCM
+4. Invalide le token de session courant (force re-login)
+
+**Savoir-faire acquis :** Docker multi-stage, docker-compose, secrets d'environnement en production, cycle de vie complet d'un service sécurisé.
+
+**Tag Git imposé :** `tp5`
+
+---
+
+### Exigences de tests par TP
+
+| TP | Tests requis | Couverture cible |
+|----|-------------|-----------------|
+| TP1 | Tests unitaires de base (login / register) | — |
+| TP2 | Tests BCrypt + tests de rate limiting | > 50 % |
+| TP3 | Tests HMAC (valide, signature invalide, nonce rejoué, timestamp expiré) | > 60 % |
+| TP4 | Tests AES-GCM (chiffrement/déchiffrement), tests d'intégration pipeline | > 70 % |
+| TP5 | Tests changement de mot de passe, tests Docker healthcheck | > 80 % |
+
+Tous les tests sont en **JUnit 5** avec Mockito pour les dépendances (repository, services).
+
+---
+
+### Architecture Spring Boot du service TP-5
+
+```
+src/main/java/com/example/auth/
+├── controller/
+│   ├── AuthController.java         # Routes API : /api/auth/*
+│   ├── LoginPageController.java    # Route HTML : GET /login
+│   └── RegisterPageController.java # Route HTML : GET /register (ajouté TP3/SSO)
+│
+├── service/
+│   ├── AuthService.java            # Logique métier : login, register, change-password
+│   └── AesGcmService.java          # Chiffrement / déchiffrement AES-256-GCM (TP4)
+│
+├── entity/
+│   └── User.java                   # Entité JPA : id, email, password, name, role,
+│                                   #   sessionToken, createdAt
+│
+├── repository/
+│   └── UserRepository.java         # Interface Spring Data JPA
+│
+├── middleware/                      # (ou filter/)
+│   └── AntiRejeuHmac.java          # Filtre HTTP : vérifie nonce + timestamp + HMAC (TP3)
+│
+└── dto/
+    ├── LoginRequest.java            # Corps JSON du login
+    └── RegisterRequest.java         # Corps JSON du register (name + role ajoutés TP3/SSO)
+```
+
+**Flux d'une requête authentifiée (inter-services) :**
+
+```
+Requête entrante
+    │
+    ▼
+AntiRejeuHmac (filtre)
+    │   vérifie X-Nonce, X-Timestamp, X-Hmac-Sig
+    │   rejette si nonce déjà vu ou timestamp > 5 min
+    ▼
+AuthController
+    │   délègue à AuthService
+    ▼
+AuthService
+    │   utilise UserRepository (JPA → MySQL)
+    │   utilise AesGcmService (chiffrement)
+    ▼
+Réponse JSON
+```
+
+---
+
+### Résumé des décisions de sécurité
+
+| Décision | Justification |
+|----------|---------------|
+| AES-GCM réversible plutôt que BCrypt | Le protocole HMAC côté serveur nécessite le mot de passe original pour recalculer la signature |
+| IV aléatoire par chiffrement | Deux chiffrements du même texte donnent des résultats différents → résistance aux analyses statistiques |
+| Master Key via variable d'environnement uniquement | Ne figure jamais dans le code source ni en base → séparation des responsabilités |
+| Token UUID 15 min + nonce en base | Limite la fenêtre d'utilisation d'un token intercepté |
+| Échange token côté serveur (PHP → Java) | Évite l'exposition du token UUID au navigateur après l'échange |
+| `firstOrCreate` dans SkillHub | Idempotent : une reconnexion SSO ne crée pas de doublons |
